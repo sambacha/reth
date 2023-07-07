@@ -1,14 +1,7 @@
 //! Support for handling peer sessions.
 use crate::{
     message::PeerMessage,
-    session::{
-        active::ActiveSession,
-        config::SessionCounter,
-        handle::{
-            ActiveSessionHandle, ActiveSessionMessage, PendingSessionEvent, PendingSessionHandle,
-            SessionCommand,
-        },
-    },
+    session::{active::ActiveSession, config::SessionCounter},
 };
 pub use crate::{message::PeerRequestSender, session::handle::PeerInfo};
 use fnv::FnvHashMap;
@@ -47,6 +40,10 @@ mod active;
 mod config;
 mod handle;
 pub use config::SessionsConfig;
+pub use handle::{
+    ActiveSessionHandle, ActiveSessionMessage, PendingSessionEvent, PendingSessionHandle,
+    SessionCommand,
+};
 
 /// Internal identifier for active sessions.
 #[derive(Debug, Clone, Copy, PartialOrd, PartialEq, Eq, Hash)]
@@ -55,7 +52,7 @@ pub struct SessionId(usize);
 /// Manages a set of sessions.
 #[must_use = "Session Manager must be polled to process session events."]
 #[derive(Debug)]
-pub(crate) struct SessionManager {
+pub struct SessionManager {
     /// Tracks the identifier for the next session.
     next_id: usize,
     /// Keeps track of all sessions
@@ -107,7 +104,7 @@ pub(crate) struct SessionManager {
 
 impl SessionManager {
     /// Creates a new empty [`SessionManager`].
-    pub(crate) fn new(
+    pub fn new(
         secret_key: SecretKey,
         config: SessionsConfig,
         executor: Box<dyn TaskSpawner>,
@@ -142,7 +139,7 @@ impl SessionManager {
 
     /// Check whether the provided [`ForkId`] is compatible based on the validation rules in
     /// `EIP-2124`.
-    pub(crate) fn is_valid_fork_id(&self, fork_id: ForkId) -> bool {
+    pub fn is_valid_fork_id(&self, fork_id: ForkId) -> bool {
         self.fork_filter.validate(fork_id).is_ok()
     }
 
@@ -154,12 +151,12 @@ impl SessionManager {
     }
 
     /// Returns the current status of the session.
-    pub(crate) fn status(&self) -> Status {
+    pub fn status(&self) -> Status {
         self.status
     }
 
     /// Returns the session hello message.
-    pub(crate) fn hello_message(&self) -> HelloMessage {
+    pub fn hello_message(&self) -> HelloMessage {
         self.hello_message.clone()
     }
 
@@ -231,7 +228,7 @@ impl SessionManager {
     }
 
     /// Starts a new pending session from the local node to the given remote node.
-    pub(crate) fn dial_outbound(&mut self, remote_addr: SocketAddr, remote_peer_id: PeerId) {
+    pub fn dial_outbound(&mut self, remote_addr: SocketAddr, remote_peer_id: PeerId) {
         // The error can be dropped because no dial will be made if it would exceed the limit
         if self.counter.ensure_pending_outbound().is_ok() {
             let session_id = self.next_id();
@@ -268,7 +265,7 @@ impl SessionManager {
     ///
     /// This will trigger the disconnect on the session task to gracefully terminate. The result
     /// will be picked up by the receiver.
-    pub(crate) fn disconnect(&self, node: PeerId, reason: Option<DisconnectReason>) {
+    pub fn disconnect(&self, node: PeerId, reason: Option<DisconnectReason>) {
         if let Some(session) = self.active_sessions.get(&node) {
             session.disconnect(reason);
         }
@@ -293,21 +290,21 @@ impl SessionManager {
     ///
     /// It will trigger the disconnect on all the session tasks to gracefully terminate. The result
     /// will be picked by the receiver.
-    pub(crate) fn disconnect_all(&self, reason: Option<DisconnectReason>) {
+    pub fn disconnect_all(&self, reason: Option<DisconnectReason>) {
         for (_, session) in self.active_sessions.iter() {
             session.disconnect(reason);
         }
     }
 
     /// Disconnects all pending sessions.
-    pub(crate) fn disconnect_all_pending(&mut self) {
+    pub fn disconnect_all_pending(&mut self) {
         for (_, session) in self.pending_sessions.iter_mut() {
             session.disconnect();
         }
     }
 
     /// Sends a message to the peer's session
-    pub(crate) fn send_message(&mut self, peer_id: &PeerId, msg: PeerMessage) {
+    pub fn send_message(&mut self, peer_id: &PeerId, msg: PeerMessage) {
         if let Some(session) = self.active_sessions.get_mut(peer_id) {
             let _ = session.commands_to_session.try_send(SessionCommand::Message(msg));
         }
@@ -557,7 +554,7 @@ impl SessionManager {
     }
 
     /// Returns [`PeerInfo`] for all connected peers
-    pub(crate) fn get_peer_info(&self) -> Vec<PeerInfo> {
+    pub fn get_peer_info(&self) -> Vec<PeerInfo> {
         self.active_sessions
             .values()
             .map(|session| PeerInfo {
@@ -573,7 +570,7 @@ impl SessionManager {
     /// Returns [`PeerInfo`] for a given peer.
     ///
     /// Returns `None` if there's no active session to the peer.
-    pub(crate) fn get_peer_info_by_id(&self, peer_id: PeerId) -> Option<PeerInfo> {
+    pub fn get_peer_info_by_id(&self, peer_id: PeerId) -> Option<PeerInfo> {
         self.active_sessions.get(&peer_id).map(|session| PeerInfo {
             remote_id: session.remote_id,
             direction: session.direction,
@@ -586,7 +583,7 @@ impl SessionManager {
 
 /// Events produced by the [`SessionManager`]
 #[derive(Debug)]
-pub(crate) enum SessionEvent {
+pub enum SessionEvent {
     /// A new session was successfully authenticated.
     ///
     /// This session is now able to exchange data.
@@ -666,8 +663,10 @@ pub(crate) enum SessionEvent {
 
 /// Errors that can occur during handshaking/authenticating the underlying streams.
 #[derive(Debug)]
-pub(crate) enum PendingSessionHandshakeError {
+pub enum PendingSessionHandshakeError {
+    /// The pending session failed due to an error while establishing the `eth` stream
     Eth(EthStreamError),
+    /// The pending session failed due to an error while establishing the ECIES stream
     Ecies(ECIESError),
 }
 
