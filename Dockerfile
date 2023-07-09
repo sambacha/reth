@@ -1,4 +1,5 @@
-FROM lukemathwalker/cargo-chef:latest-rust-1 AS chef
+# syntax=docker/dockerfile-upstream:master-experimental
+FROM lukemathwalker/cargo-chef:0.1.61-rust-1-slim-buster AS chef
 WORKDIR /app
 
 LABEL org.opencontainers.image.source=https://github.com/paradigmxyz/reth
@@ -17,7 +18,11 @@ ARG BUILD_PROFILE=release
 ENV BUILD_PROFILE $BUILD_PROFILE
 
 # Install system dependencies
-RUN apt-get update && apt-get -y upgrade && apt-get install -y libclang-dev pkg-config
+RUN set -eux; \
+    apt-get update && apt-get install -qqy --assume-yes --no-install-recommends \
+    libclang-dev \
+    pkg-config; \
+    && rm -rf /var/lib/apt/lists/*;
 
 # Builds dependencies
 RUN cargo chef cook --profile $BUILD_PROFILE --recipe-path recipe.json
@@ -26,8 +31,8 @@ RUN cargo chef cook --profile $BUILD_PROFILE --recipe-path recipe.json
 COPY . .
 RUN cargo build --profile $BUILD_PROFILE --locked --bin reth
 
-# Use Ubuntu as the release image
-FROM ubuntu AS runtime
+
+FROM debian:bullseye-20220509-slim AS runtime
 WORKDIR /app
 
 # Copy reth over from the build stage
@@ -36,5 +41,23 @@ COPY --from=builder /app/target/release/reth /usr/local/bin
 # Copy licenses
 COPY LICENSE-* ./
 
-EXPOSE 30303 30303/udp 9001 8545 8546
+SHELL ["/bin/bash", "-c"]
+
+RUN exec "$SHELL"
+
+# 8545 is Standard Port
+# 8180 is OpenEthereum
+# 3001 is a fallback port
+EXPOSE 8545/tcp
+EXPOSE 8545/udp
+EXPOSE 8180
+EXPOSE 3001/tcp
+
+EXPOSE 30303/tcp
+EXPOSE 30303/udp 
+EXPOSE 9001
+EXPOSE 8546
+
+STOPSIGNAL SIGQUIT
+
 ENTRYPOINT ["/usr/local/bin/reth"]
